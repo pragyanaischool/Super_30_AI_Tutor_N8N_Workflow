@@ -4,6 +4,7 @@ import requests
 import base64
 import os
 from groq import Groq
+from io import StringIO
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -14,29 +15,20 @@ st.set_page_config(
 )
 
 # --- Constants & API Initialization ---
-
-# IMPORTANT: Paste your n8n Webhook URL here
-# Use the "Production URL" from your n8n Webhook node
 N8N_WEBHOOK_URL = "YOUR_N8N_PRODUCTION_WEBHOOK_URL_HERE" 
 
-# Initialize the Groq client using the API key from Streamlit's secrets
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception:
     st.error("Groq API key not found. Please add it to your Streamlit secrets.")
     st.stop()
 
-
 # --- Helper Functions ---
-
 def call_groq(prompt, model="llama3-70b-8192"):
     """Function to call the GROQ API and get a response."""
     try:
         chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model=model,
-            temperature=0.7,
-        )
+            messages=[{"role": "user", "content": prompt}], model=model, temperature=0.7)
         return chat_completion.choices[0].message.content
     except Exception as e:
         st.error(f"An error occurred with the Groq API: {e}")
@@ -46,174 +38,198 @@ def run_code_in_n8n(code_to_run, df=None):
     """Sends code and optional dataframe to n8n for execution."""
     payload = {"code": code_to_run}
     if df is not None:
-        # Serialize dataframe to JSON to send it over HTTP
         payload['df_json'] = df.to_json(orient='split')
-        
     try:
-        response = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=30)
-        response.raise_for_status() # Raise an exception for bad status codes
+        response = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=60)
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         return {"error": f"Failed to connect to n8n execution engine: {e}"}
 
-# --- Streamlit App UI ---
+# --- Initialize Session State ---
+def init_session_state():
+    # This function is to avoid cluttering the main script area
+    state_vars = {
+        'code': "# Your Python code will appear here", 'result': {}, 'df': None,
+        'problem_statement': "", 'enhanced_problem_statement': "", 'target_variable': None,
+        'suggested_tasks': [], 'current_task': None, 'explanation': ""
+    }
+    for var, default_val in state_vars.items():
+        if var not in st.session_state:
+            st.session_state[var] = default_val
 
-# Initialize session state variables
-if 'code' not in st.session_state:
-    st.session_state.code = "# Your Python code will appear here"
-if 'result' not in st.session_state:
-    st.session_state.result = {}
+init_session_state()
 
+# --- UI Layout ---
 st.sidebar.title("🎓 Galileo AI Tutor")
 st.sidebar.markdown("Your personal guide through the Data Science lifecycle.")
 
-# Sidebar navigation
-lifecycle_step = st.sidebar.radio(
-    "Choose a learning module:",
-    (
-        "Introduction",
-        "Data Acquisition & Loading",
-        "Exploratory Data Analysis (EDA)",
-        # "Feature Engineering", # Future steps
-        # "Model Building", # Future steps
-    ),
-    key="lifecycle_step"
-)
+lifecycle_step = st.sidebar.radio("Choose a learning module:",
+    ("1. Define Problem & Load Data", "2. Understand Your Data", "3. Guided Data Analysis"))
 
-# --- Main Content Area ---
 st.title(f"Module: {lifecycle_step}")
 
-# Introduction Page
-if lifecycle_step == "Introduction":
-    st.markdown("""
-    ### Welcome to Galileo, your AI-powered Data Science Tutor!
+# --- Module 1: Define Problem & Load Data ---
+if lifecycle_step == "1. Define Problem & Load Data":
+    st.header("Step 1: Define Your Goal")
+    st.text_area("Start with a basic problem statement or goal:", key="problem_statement")
     
-    This interactive application is designed to guide you step-by-step through the typical data science workflow.
-    
-    **How to use this tool:**
-    1.  **Navigate Modules:** Use the sidebar on the left to select a module.
-    2.  **Upload Data:** In the 'Data Acquisition' module, you can upload your own CSV file. A sample Titanic dataset is also available.
-    3.  **Generate & Run Code:** In the 'EDA' module, describe the analysis or plot you want in plain English. The AI will generate the Python code.
-    4.  **Experiment:** You can edit the generated code and re-run it to see how your changes affect the output.
-    
-    Let's get started! Select the **Data Acquisition & Loading** module from the sidebar.
-    """)
-
-# Data Loading Page
-elif lifecycle_step == "Data Acquisition & Loading":
-    st.header("Step 1: Get Your Data")
-    st.markdown("""
-    Every data science project begins with data. Here, you can either upload your own dataset in CSV format or use a sample dataset to get started quickly.
-    """)
-
-    # Option to use a sample dataset
-    if st.button("Load Sample Titanic Dataset"):
-        # Using a well-known, accessible URL for the Titanic dataset
-        df = pd.read_csv("https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv")
-        st.session_state.df = df
-        st.success("Sample Titanic dataset loaded successfully!")
-    
-    uploaded_file = st.file_uploader("Or upload your own CSV file", type="csv")
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.session_state.df = df # Save dataframe to session state
-        st.success("Your file was uploaded successfully!")
-
-    if "df" in st.session_state:
-        st.subheader("Data Preview")
-        st.dataframe(st.session_state.df.head())
-        st.info(f"Dataset loaded with **{st.session_state.df.shape[0]}** rows and **{st.session_state.df.shape[1]}** columns.")
-        st.markdown("--- \n Great! Now, let's move to **Exploratory Data Analysis (EDA)** using the sidebar.")
-
-# Exploratory Data Analysis (EDA) Page
-elif lifecycle_step == "Exploratory Data Analysis (EDA)":
-    if "df" not in st.session_state:
-        st.warning("Please load a dataset first in the 'Data Acquisition & Loading' module.")
-        st.stop()
-
-    df = st.session_state.df
-    st.header("Step 2: Explore Your Data")
-    st.markdown("""
-    Now that we have data, let's explore it! EDA is about understanding your dataset's main characteristics, often with visual methods.
-    
-    **Describe the plot you want to create below.** For example:
-    - *`a histogram of the 'Age' column`*
-    - *`a bar chart showing the count of passengers in each 'Pclass'`*
-    - *`a scatter plot of 'Age' vs 'Fare', colored by 'Survived'`*
-    """)
-
-    plot_request = st.text_input(
-        "What would you like to visualize?",
-        "a bar chart showing survival count by gender ('Sex' column)"
-    )
-
-    col1, col2 = st.columns([1, 1], gap="large")
-
-    with col1:
-        st.subheader("🤖 AI Code Generation")
-        if st.button("Generate Code", type="primary"):
-            with st.spinner("Galileo is thinking..."):
+    if st.button("Enhance with AI"):
+        if st.session_state.problem_statement:
+            with st.spinner("AI is refining your problem statement..."):
                 prompt = f"""
-                You are a data science assistant. Given a pandas DataFrame named 'df',
-                write a Python script using seaborn and matplotlib to: {plot_request}.
-                The dataframe 'df' has the following columns: {list(df.columns)}.
-                
-                Important Rules:
-                - The dataframe is already loaded in a variable named `df`.
-                - Assume `import matplotlib.pyplot as plt` and `import seaborn as sns` are done.
-                - Provide ONLY the Python code, without any explanation, comments, or markdown formatting.
-                - Use seaborn for plotting if possible. Add a title to the plot.
+                A user has provided the following basic problem statement for a data science project:
+                '{st.session_state.problem_statement}'
+                Enhance this into a clear, concise, and well-defined problem statement. 
+                Focus on the potential objectives and success metrics.
                 """
-                generated_code = call_groq(prompt)
-                if generated_code:
-                    st.session_state.code = generated_code.strip().strip("```python").strip("```")
+                st.session_state.enhanced_problem_statement = call_groq(prompt)
+        else:
+            st.warning("Please provide a basic problem statement first.")
 
-        # Display the code in an editable text area
-        st.session_state.code = st.text_area(
-            "You can edit the code here:",
-            value=st.session_state.code,
-            height=350,
-            key="code_editor"
-        )
-        
-        if st.button("▶️ Run Code"):
-            with st.spinner("Sending code to secure execution engine..."):
-                result = run_code_in_n8n(st.session_state.code, df)
-                st.session_state.result = result
+    if st.session_state.enhanced_problem_statement:
+        st.text_area("Edit and confirm the final problem statement:", key="enhanced_problem_statement", height=150)
 
-    with col2:
-        st.subheader("📊 Output")
-        result = st.session_state.result
-        if not result:
-            st.info("The output of your code will be displayed here.")
-        
-        if "image_data" in result:
-            st.image(base64.b64decode(result["image_data"]), caption="Generated Plot")
-        
-        if "error" in result:
-            st.error("An error occurred during execution:")
-            st.code(result["error"], language='bash')
+    st.header("Step 2: Provide Your Data")
+    data_source = st.radio("Choose data source:", ("Upload a CSV file", "Provide a URL"))
 
-            # Add a button for code evaluation
-            if st.button("🤔 Ask Tutor for Help"):
-                eval_prompt = f"""
-                You are a friendly Python tutor. A student is learning data visualization.
-                Their goal was to: "{plot_request}".
-                
-                They wrote the following code:
-                --- CODE ---
-                {st.session_state.code}
-                --- END CODE ---
-                
-                But it produced this error:
-                --- ERROR ---
-                {result['error']}
-                --- END ERROR ---
-                
-                Please explain the error in simple, encouraging terms. Then, provide the corrected, complete Python code block.
-                Structure your response with "Explanation:" and "Corrected Code:".
+    if data_source == "Upload a CSV file":
+        uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
+        if uploaded_file:
+            st.session_state.df = pd.read_csv(uploaded_file)
+    else:
+        url = st.text_input("Enter the URL of a raw CSV file:")
+        if url:
+            try:
+                st.session_state.df = pd.read_csv(url)
+            except Exception as e:
+                st.error(f"Failed to load data from URL: {e}")
+
+    if st.session_state.df is not None:
+        st.success("Data loaded successfully!")
+        st.dataframe(st.session_state.df.head())
+        st.info(f"Dataset has **{st.session_state.df.shape[0]}** rows and **{st.session_state.df.shape[1]}** columns.")
+
+# --- Module 2: Understand Your Data ---
+elif lifecycle_step == "2. Understand Your Data":
+    if st.session_state.df is None:
+        st.warning("Please load a dataset in Module 1 first.")
+    else:
+        st.header("Exploratory Data Overview")
+        st.dataframe(st.session_state.df.describe())
+        
+        buffer = StringIO()
+        st.session_state.df.info(buf=buffer)
+        st.text_area("Dataframe Info (Data Types & Non-Null Counts):", buffer.getvalue(), height=250)
+        
+        st.header("Identify Target Variable")
+        st.markdown("Select the column your project aims to predict or analyze most deeply.")
+        st.session_state.target_variable = st.selectbox("Target Variable:", options=[None] + list(st.session_state.df.columns))
+        if st.session_state.target_variable:
+            st.success(f"Target variable set to: **{st.session_state.target_variable}**")
+
+# --- Module 3: Guided Data Analysis (The Iterative Loop) ---
+elif lifecycle_step == "3. Guided Data Analysis":
+    if st.session_state.df is None:
+        st.warning("Please load a dataset in Module 1 first.")
+    else:
+        st.header("Iterative Analysis")
+        
+        # --- Task Suggestion ---
+        if st.button("Suggest Analysis Steps", type="primary"):
+            with st.spinner("AI is planning your analysis..."):
+                prompt = f"""
+                Given a dataset with columns {list(st.session_state.df.columns)} 
+                and the problem statement '{st.session_state.enhanced_problem_statement or st.session_state.problem_statement}',
+                suggest a list of 5-7 numbered steps for exploratory data analysis and preprocessing.
+                Be specific. For example: '1. Analyze the distribution of the 'Age' column.'
                 """
-                with st.spinner("Analyzing the error..."):
-                    explanation = call_groq(eval_prompt, model="llama3-8b-8192")
-                    if explanation:
-                        st.markdown(explanation)
+                tasks = call_groq(prompt)
+                if tasks:
+                    st.session_state.suggested_tasks = [t.strip() for t in tasks.split('\n') if t.strip()]
+
+        if st.session_state.suggested_tasks:
+            st.session_state.current_task = st.radio("Select a task to perform:", options=st.session_state.suggested_tasks)
+
+        st.text_input("Or, define a custom task:", key="current_task")
+
+        if st.session_state.current_task:
+            st.info(f"**Current Task:** {st.session_state.current_task}")
+
+            col1, col2 = st.columns([1, 1], gap="large")
+
+            # --- Code Generation & Execution ---
+            with col1:
+                st.subheader("🤖 AI Code Generation")
+                if st.button("Generate Code"):
+                    with st.spinner("Galileo is writing code..."):
+                        prompt = f"""
+                        You are a data science assistant. For a pandas DataFrame 'df' and the task '{st.session_state.current_task}',
+                        write a Python script using seaborn and matplotlib.
+                        DataFrame columns: {list(st.session_state.df.columns)}.
+                        Rules:
+                        - Provide ONLY raw Python code. No explanations or markdown.
+                        - Assume 'df' is loaded.
+                        - Assume 'matplotlib.pyplot as plt' and 'seaborn as sns' are imported.
+                        - Add a title to the plot.
+                        """
+                        code = call_groq(prompt)
+                        if code:
+                            st.session_state.code = code.strip().strip("```python").strip("```")
+
+                st.text_area("Edit Code:", value=st.session_state.code, height=350, key="code_editor")
+                
+                if st.button("▶️ Execute Code"):
+                    with st.spinner("Sending code to secure execution engine..."):
+                        st.session_state.result = run_code_in_n8n(st.session_state.code, st.session_state.df)
+                        
+                        # After successful run, get an explanation
+                        if "error" not in st.session_state.result:
+                             with st.spinner("Generating explanation..."):
+                                prompt = f"""
+                                A data science task was: '{st.session_state.current_task}'.
+                                The following Python code was successfully executed to complete it:
+                                ```python
+                                {st.session_state.code}
+                                ```
+                                Explain what this code does, why it's useful for the given task, and what the key takeaways from its potential output might be.
+                                """
+                                st.session_state.explanation = call_groq(prompt, model="llama3-8b-8192")
+
+            # --- Output and Explanation ---
+            with col2:
+                st.subheader("📊 Output & Explanation")
+                result = st.session_state.result
+                if not result:
+                    st.info("Output will be displayed here.")
+                
+                if "image_data" in result:
+                    st.image(base64.b64decode(result["image_data"]), caption="Generated Plot")
+                
+                if st.session_state.explanation:
+                    st.markdown("---")
+                    st.subheader("👨‍🏫 Tutor's Explanation")
+                    st.markdown(st.session_state.explanation)
+
+                if "error" in result:
+                    st.error("An error occurred:")
+                    st.code(result["error"], language='bash')
+
+                    if st.button("🤔 Ask Tutor to Debug"):
+                        prompt = f"""
+                        A student's goal was: "{st.session_state.current_task}".
+                        They wrote this code:
+                        --- CODE ---
+                        {st.session_state.code}
+                        --- END CODE ---
+                        It produced this error:
+                        --- ERROR ---
+                        {result['error']}
+                        --- END ERROR ---
+                        Explain the error simply and provide the corrected code block.
+                        """
+                        with st.spinner("Debugging..."):
+                            fix = call_groq(prompt)
+                            if fix:
+                                st.markdown(fix)
+
