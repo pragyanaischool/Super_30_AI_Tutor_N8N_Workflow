@@ -34,7 +34,7 @@ if 'explanation' not in st.session_state:
 with st.sidebar:
     st.header("Setup")
     uploaded_file = st.file_uploader("1. Upload your CSV file", type=["csv"])
-    n8n_webhook_url = st.text_input("2. Enter your n8n Webhook URL", placeholder="https://your-n8n-instance/webhook/...")
+    n8n_webhook_url = st.text_input("2. Enter your n8n Webhook URL", placeholder="https://sateesh-ambesange.app.n8n.cloud/webhook-test/34566e03-37e3-4070-9455-08356a7b88cc")
 
     if uploaded_file is not None:
         try:
