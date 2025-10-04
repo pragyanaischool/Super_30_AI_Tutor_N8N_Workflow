@@ -8,7 +8,7 @@ from io import StringIO, BytesIO
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Galileo AI Data Science Tutor",
+    page_title="PragyanAI Data Science Tutor",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
