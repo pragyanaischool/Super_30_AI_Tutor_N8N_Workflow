@@ -52,7 +52,7 @@ def init_session_state():
     state_vars = {
         'code': "# Your Python code will appear here", 'result': {}, 'df': None,
         'problem_statement': "", 'enhanced_problem_statement': "", 'target_variable': None,
-        'suggested_tasks': [], 'current_task': None, 'explanation': ""
+        'suggested_tasks': [], 'current_task': None, 'explanation': "", 'plan_generated_for': None
     }
     for var, default_val in state_vars.items():
         if var not in st.session_state:
@@ -121,34 +121,35 @@ if lifecycle_step == "1. Define Problem & Load Data":
                     if selected_problem and selected_problem != "-":
                         project_details = projects_df[projects_df['Problem Statement'] == selected_problem].iloc[0]
                         
-                        # Pre-populate session state from the selected project
                         st.session_state.problem_statement = project_details.get('Problem Statement', '')
                         
-                        # Fetch all the detailed planning columns
-                        refined_statement = project_details.get('Refined Problem Statement', 'Not specified.')
-                        key_questions = project_details.get('Key Questions for Exploration', 'Not specified.')
-                        key_analytics = project_details.get('Key Analytics & Statistics', 'Not specified.')
-                        viz_ideas = project_details.get('Data Visualization Ideas', 'Not specified.')
-                        potential_insights = project_details.get('Potential Data Insights', 'Not specified.')
+                        # Only generate the plan if it's a new project selection
+                        if st.session_state.plan_generated_for != st.session_state.problem_statement:
+                            # Fetch all the detailed planning columns
+                            refined_statement = project_details.get('Refined Problem Statement', 'Not specified.')
+                            key_questions = project_details.get('Key Questions for Exploration', 'Not specified.')
+                            key_analytics = project_details.get('Key Analytics & Statistics', 'Not specified.')
+                            viz_ideas = project_details.get('Data Visualization Ideas', 'Not specified.')
+                            potential_insights = project_details.get('Potential Data Insights', 'Not specified.')
+                            
+                            # Build the prompt for the AI to generate a comprehensive plan
+                            generation_prompt = f"""
+                            As a data science project manager, synthesize the following points for a project titled "{st.session_state.problem_statement}" into a comprehensive 'Detailed Project Plan & Goals'.
+                            The output should be well-structured using markdown headings for clarity.
+
+                            - **Base Problem Statement:** {refined_statement}
+                            - **Key Questions to Explore:** {key_questions}
+                            - **Core Analytics & Statistics to Use:** {key_analytics}
+                            - **Potential Visualization Ideas:** {viz_ideas}
+                            - **Expected Potential Insights:** {potential_insights}
+
+                            Combine these points into a cohesive and actionable project plan.
+                            """
+                            with st.spinner("AI is generating a detailed project plan..."):
+                                st.session_state.enhanced_problem_statement = call_groq(generation_prompt)
+                                st.session_state.plan_generated_for = st.session_state.problem_statement # Mark as generated for this project
+
                         key_steps_raw = project_details.get('Key Analytics Steps', '')
-                        
-                        # Build the comprehensive project plan string
-                        full_plan = f"""### Refined Problem Statement
-{refined_statement}
-
-### Key Questions for Exploration
-{key_questions}
-
-### Key Analytics & Statistics
-{key_analytics}
-
-### Data Visualization Ideas
-{viz_ideas}
-
-### Potential Data Insights
-{potential_insights}
-"""
-                        st.session_state.enhanced_problem_statement = full_plan
                         st.session_state.suggested_tasks = [step.strip() for step in (key_steps_raw.split('\n') if key_steps_raw and isinstance(key_steps_raw, str) else []) if step.strip()]
                         dataset_url = project_details['Dataset URL']
                         
@@ -207,6 +208,21 @@ if lifecycle_step == "1. Define Problem & Load Data":
             height=300
         )
         
+        col1, col2, _ = st.columns([1, 1, 3])
+        with col1:
+            if st.button("Refine with AI"):
+                if st.session_state.enhanced_problem_statement:
+                    with st.spinner("AI is refining the plan..."):
+                        refine_prompt = f"Refine the following data science project plan to be more detailed, structured, and actionable:\n\n---\n{st.session_state.enhanced_problem_statement}\n---"
+                        st.session_state.enhanced_problem_statement = call_groq(refine_prompt)
+                        st.rerun()
+                else:
+                    st.warning("Project plan is empty. Cannot refine.")
+
+        with col2:
+            if st.button("Save & Continue", type="primary"):
+                st.success("Project plan saved! Please proceed to the next module from the sidebar.")
+
         tasks_text = "\n".join(st.session_state.suggested_tasks)
         edited_tasks_text = st.text_area(
             "**Key Analytics Steps:** (One task per line)", 
@@ -330,3 +346,4 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
+
