@@ -87,8 +87,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
         def get_project_categories():
             """Reads the sheet names from the Google Sheet, which are the categories."""
             try:
-                #https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
                 excel_file = pd.ExcelFile(sheet_url, engine='openpyxl')
                 return excel_file.sheet_names
             except Exception as e:
@@ -349,3 +348,5 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
+
+
