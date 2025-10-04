@@ -83,7 +83,6 @@ if lifecycle_step == "1. Define Problem & Load Data":
     # --- BLOCK FOR PRE-DEFINED PROJECTS ---
     if problem_source == "Select a pre-defined project":
         
-        # --- FIX: Cache the raw bytes of the file, not the complex ExcelFile object ---
         @st.cache_data
         def download_sheet_as_bytes():
             """
@@ -91,7 +90,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
             This is serializable and avoids the UnserializableReturnValueError.
             """
             try:
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
                 headers = {'User-Agent': 'Mozilla/5.0'}
                 response = requests.get(sheet_url, headers=headers)
                 response.raise_for_status() # Will raise an HTTPError for bad responses (4xx or 5xx)
@@ -109,7 +108,6 @@ if lifecycle_step == "1. Define Problem & Load Data":
                 excel_file = pd.ExcelFile(BytesIO(excel_file_bytes), engine='openpyxl')
             except Exception as e:
                 st.error(f"An error occurred while processing the Excel file: {e}")
-        # --- END FIX ---
         
         if excel_file:
             categories = excel_file.sheet_names
@@ -213,6 +211,12 @@ if lifecycle_step == "1. Define Problem & Load Data":
         st.subheader("Project Plan")
         st.markdown("Review and edit the project plan. This will guide the AI in the next modules.")
         
+        # --- FIX: Update session state before rendering the widget to avoid API exception ---
+        if 'refined_plan_holder' in st.session_state:
+            st.session_state.enhanced_problem_statement = st.session_state.refined_plan_holder
+            del st.session_state.refined_plan_holder # Clean up the temporary variable
+        # --- END FIX ---
+
         st.text_area(
             "**Detailed Project Plan & Goals:**", 
             key="enhanced_problem_statement", 
@@ -227,8 +231,9 @@ if lifecycle_step == "1. Define Problem & Load Data":
                         refine_prompt = f"Refine the following data science project plan to be more detailed, structured, and actionable:\n\n---\n{st.session_state.enhanced_problem_statement}\n---"
                         refined_plan = call_groq(refine_prompt)
                         if refined_plan:
-                            st.session_state.enhanced_problem_statement = refined_plan
-                        st.rerun()
+                            # Use a temporary variable to hold the new plan and trigger a rerun
+                            st.session_state.refined_plan_holder = refined_plan
+                            st.rerun()
                 else:
                     st.warning("Project plan is empty. Cannot refine.")
 
@@ -359,4 +364,3 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
-
