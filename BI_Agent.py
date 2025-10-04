@@ -87,7 +87,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
         def get_project_categories():
             """Reads the sheet names from the Google Sheet, which are the categories."""
             try:
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
                 excel_file = pd.ExcelFile(sheet_url)
                 return excel_file.sheet_names
             except Exception as e:
@@ -98,7 +98,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
         def load_project_sheet(category):
             """Loads a specific sheet (category) from the Google Sheet into a DataFrame."""
             try:
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
                 projects_df = pd.read_excel(sheet_url, sheet_name=category)
                 projects_df.columns = projects_df.columns.str.strip()
                 return projects_df
@@ -122,10 +122,34 @@ if lifecycle_step == "1. Define Problem & Load Data":
                         project_details = projects_df[projects_df['Problem Statement'] == selected_problem].iloc[0]
                         
                         # Pre-populate session state from the selected project
-                        st.session_state.problem_statement = project_details['Problem Statement']
-                        st.session_state.enhanced_problem_statement = project_details['Refined Problem Statement']
-                        key_steps = project_details.get('Key Analytics Steps', '')
-                        st.session_state.suggested_tasks = [step.strip() for step in (key_steps.split('\n') if key_steps and isinstance(key_steps, str) else []) if step.strip()]
+                        st.session_state.problem_statement = project_details.get('Problem Statement', '')
+                        
+                        # Fetch all the detailed planning columns
+                        refined_statement = project_details.get('Refined Problem Statement', 'Not specified.')
+                        key_questions = project_details.get('Key Questions for Exploration', 'Not specified.')
+                        key_analytics = project_details.get('Key Analytics & Statistics', 'Not specified.')
+                        viz_ideas = project_details.get('Data Visualization Ideas', 'Not specified.')
+                        potential_insights = project_details.get('Potential Data Insights', 'Not specified.')
+                        key_steps_raw = project_details.get('Key Analytics Steps', '')
+                        
+                        # Build the comprehensive project plan string
+                        full_plan = f"""### Refined Problem Statement
+{refined_statement}
+
+### Key Questions for Exploration
+{key_questions}
+
+### Key Analytics & Statistics
+{key_analytics}
+
+### Data Visualization Ideas
+{viz_ideas}
+
+### Potential Data Insights
+{potential_insights}
+"""
+                        st.session_state.enhanced_problem_statement = full_plan
+                        st.session_state.suggested_tasks = [step.strip() for step in (key_steps_raw.split('\n') if key_steps_raw and isinstance(key_steps_raw, str) else []) if step.strip()]
                         dataset_url = project_details['Dataset URL']
                         
                         st.info(f"**Selected Project:** {st.session_state.problem_statement}")
@@ -178,9 +202,9 @@ if lifecycle_step == "1. Define Problem & Load Data":
         st.markdown("Review and edit the project plan. This will guide the AI in the next modules.")
         
         st.text_area(
-            "**Refined Problem Statement:**", 
+            "**Detailed Project Plan & Goals:**", 
             key="enhanced_problem_statement", 
-            height=150
+            height=300
         )
         
         tasks_text = "\n".join(st.session_state.suggested_tasks)
@@ -222,7 +246,7 @@ elif lifecycle_step == "3. Guided Data Analysis":
                 with st.spinner("AI is planning your analysis..."):
                     prompt = f"""
                     Given a dataset with columns {list(st.session_state.df.columns)} 
-                    and the problem statement '{st.session_state.enhanced_problem_statement or st.session_state.problem_statement}',
+                    and the project plan '{st.session_state.enhanced_problem_statement or st.session_state.problem_statement}',
                     suggest a list of 5-7 numbered steps for exploratory data analysis and preprocessing.
                     """
                     tasks = call_groq(prompt)
@@ -306,4 +330,3 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
-
