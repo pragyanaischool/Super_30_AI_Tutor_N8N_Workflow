@@ -80,17 +80,14 @@ if lifecycle_step == "1. Define Problem & Load Data":
         horizontal=True
     )
 
-    # Option 2: Select from a pre-defined list
+    # --- BLOCK FOR PRE-DEFINED PROJECTS ---
     if problem_source == "Select a pre-defined project":
         
-        # FIX: New functions to handle multi-sheet Google Sheet
         @st.cache_data
         def get_project_categories():
             """Reads the sheet names from the Google Sheet, which are the categories."""
             try:
-                # URL for exporting the entire spreadsheet as an Excel file
                 sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
-                # Use pd.ExcelFile to efficiently get sheet names without loading all data
                 excel_file = pd.ExcelFile(sheet_url)
                 return excel_file.sheet_names
             except Exception as e:
@@ -103,7 +100,6 @@ if lifecycle_step == "1. Define Problem & Load Data":
             try:
                 sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
                 projects_df = pd.read_excel(sheet_url, sheet_name=category)
-                # Strip any leading/trailing whitespace from column names
                 projects_df.columns = projects_df.columns.str.strip()
                 return projects_df
             except Exception as e:
@@ -120,47 +116,45 @@ if lifecycle_step == "1. Define Problem & Load Data":
                 
                 if projects_df is not None:
                     problem_statements = ["-"] + projects_df['Problem Statement'].tolist()
-                    
                     selected_problem = st.selectbox("Select a Problem Statement:", options=problem_statements)
 
                     if selected_problem and selected_problem != "-":
                         project_details = projects_df[projects_df['Problem Statement'] == selected_problem].iloc[0]
+                        
+                        # Pre-populate session state from the selected project
                         st.session_state.problem_statement = project_details['Problem Statement']
+                        st.session_state.enhanced_problem_statement = project_details['Refined Problem Statement']
+                        key_steps = project_details.get('Key Analytics Steps', '')
+                        st.session_state.suggested_tasks = [step.strip() for step in (key_steps.split('\n') if key_steps and isinstance(key_steps, str) else []) if step.strip()]
                         dataset_url = project_details['Dataset URL']
                         
-                        st.info(f"**Selected Problem:** {st.session_state.problem_statement}")
+                        st.info(f"**Selected Project:** {st.session_state.problem_statement}")
                         st.markdown(f"**Dataset Source:** [Link]({dataset_url})")
 
                         try:
-                            with st.spinner("Loading dataset for the selected project..."):
+                            with st.spinner("Loading dataset..."):
                                 st.session_state.df = pd.read_csv(dataset_url)
                         except Exception as e:
                             st.error(f"Failed to load data from URL: {e}")
                             st.session_state.df = None
 
-    # Option 1: Define your own problem statement
+    # --- BLOCK FOR USER-DEFINED PROJECTS ---
     else:
-        st.text_area("Start with a basic problem statement or goal:", key="problem_statement")
+        st.text_area("Start with a basic problem statement or goal:", key="problem_statement", height=100)
         
         if st.button("Enhance with AI"):
             if st.session_state.problem_statement:
                 with st.spinner("AI is refining your problem statement..."):
                     prompt = f"""
-                    A user has provided the following basic problem statement for a data science project:
-                    '{st.session_state.problem_statement}'
-                    Enhance this into a clear, concise, and well-defined problem statement. 
-                    Focus on the potential objectives and success metrics.
+                    A user has provided the following basic problem statement: '{st.session_state.problem_statement}'
+                    Enhance this into a clear, concise, and well-defined problem statement.
                     """
                     st.session_state.enhanced_problem_statement = call_groq(prompt)
             else:
                 st.warning("Please provide a basic problem statement first.")
 
-        if st.session_state.enhanced_problem_statement:
-            st.text_area("Edit and confirm the final problem statement:", key="enhanced_problem_statement", height=150)
-
         st.header("Step 2: Provide Your Data")
         data_source = st.radio("Choose data source:", ("Upload a CSV file", "Provide a URL"))
-
         if data_source == "Upload a CSV file":
             uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
             if uploaded_file:
@@ -173,11 +167,30 @@ if lifecycle_step == "1. Define Problem & Load Data":
                 except Exception as e:
                     st.error(f"Failed to load data from URL: {e}")
 
-    # This part is common to both options and will display the dataframe once loaded
+    # --- COMMON DISPLAY BLOCK (AFTER DATA IS LOADED) ---
     if st.session_state.df is not None:
+        st.header("Step 3: Review Loaded Data & Plan")
         st.success("Data loaded successfully!")
         st.dataframe(st.session_state.df.head())
         st.info(f"Dataset has **{st.session_state.df.shape[0]}** rows and **{st.session_state.df.shape[1]}** columns.")
+        
+        st.subheader("Project Plan")
+        st.markdown("Review and edit the project plan. This will guide the AI in the next modules.")
+        
+        st.text_area(
+            "**Refined Problem Statement:**", 
+            key="enhanced_problem_statement", 
+            height=150
+        )
+        
+        tasks_text = "\n".join(st.session_state.suggested_tasks)
+        edited_tasks_text = st.text_area(
+            "**Key Analytics Steps:** (One task per line)", 
+            value=tasks_text, 
+            height=200,
+            placeholder="List the analysis steps you want to perform, one per line. Or click 'Suggest Analysis Steps' in Module 3."
+        )
+        st.session_state.suggested_tasks = [step.strip() for step in edited_tasks_text.split('\n') if step.strip()]
 
 # --- Module 2: Understand Your Data ---
 elif lifecycle_step == "2. Understand Your Data":
@@ -204,18 +217,17 @@ elif lifecycle_step == "3. Guided Data Analysis":
     else:
         st.header("Iterative Analysis")
         
-        # --- Task Suggestion ---
-        if st.button("Suggest Analysis Steps", type="primary"):
-            with st.spinner("AI is planning your analysis..."):
-                prompt = f"""
-                Given a dataset with columns {list(st.session_state.df.columns)} 
-                and the problem statement '{st.session_state.enhanced_problem_statement or st.session_state.problem_statement}',
-                suggest a list of 5-7 numbered steps for exploratory data analysis and preprocessing.
-                Be specific. For example: '1. Analyze the distribution of the 'Age' column.'
-                """
-                tasks = call_groq(prompt)
-                if tasks:
-                    st.session_state.suggested_tasks = [t.strip() for t in tasks.split('\n') if t.strip()]
+        if not st.session_state.suggested_tasks:
+            if st.button("Suggest Analysis Steps", type="primary"):
+                with st.spinner("AI is planning your analysis..."):
+                    prompt = f"""
+                    Given a dataset with columns {list(st.session_state.df.columns)} 
+                    and the problem statement '{st.session_state.enhanced_problem_statement or st.session_state.problem_statement}',
+                    suggest a list of 5-7 numbered steps for exploratory data analysis and preprocessing.
+                    """
+                    tasks = call_groq(prompt)
+                    if tasks:
+                        st.session_state.suggested_tasks = [t.strip() for t in tasks.split('\n') if t.strip()]
 
         if st.session_state.suggested_tasks:
             st.session_state.current_task = st.radio("Select a task to perform:", options=st.session_state.suggested_tasks)
@@ -252,16 +264,15 @@ elif lifecycle_step == "3. Guided Data Analysis":
                     with st.spinner("Sending code to secure execution engine..."):
                         st.session_state.result = run_code_in_n8n(st.session_state.code, st.session_state.df)
                         
-                        # After successful run, get an explanation
                         if "error" not in st.session_state.result:
                              with st.spinner("Generating explanation..."):
                                 prompt = f"""
                                 A data science task was: '{st.session_state.current_task}'.
-                                The following Python code was successfully executed to complete it:
+                                The following Python code was executed:
                                 ```python
                                 {st.session_state.code}
                                 ```
-                                Explain what this code does, why it's useful for the given task, and what the key takeaways from its potential output might be.
+                                Explain what this code does and why it's useful for the task.
                                 """
                                 st.session_state.explanation = call_groq(prompt, model="llama3-8b-8192")
 
@@ -287,17 +298,12 @@ elif lifecycle_step == "3. Guided Data Analysis":
                     if st.button("🤔 Ask Tutor to Debug"):
                         prompt = f"""
                         A student's goal was: "{st.session_state.current_task}".
-                        They wrote this code:
-                        --- CODE ---
-                        {st.session_state.code}
-                        --- END CODE ---
-                        It produced this error:
-                        --- ERROR ---
-                        {result['error']}
-                        --- END ERROR ---
+                        They wrote this code: {st.session_state.code}
+                        It produced this error: {result['error']}
                         Explain the error simply and provide the corrected code block.
                         """
                         with st.spinner("Debugging..."):
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
+
