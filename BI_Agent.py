@@ -83,29 +83,33 @@ if lifecycle_step == "1. Define Problem & Load Data":
     # --- BLOCK FOR PRE-DEFINED PROJECTS ---
     if problem_source == "Select a pre-defined project":
         
+        # --- FIX: Cache the raw bytes of the file, not the complex ExcelFile object ---
         @st.cache_data
-        def load_google_sheet_data():
+        def download_sheet_as_bytes():
             """
-            Downloads the entire Google Sheet once, stores it in cache, 
-            and returns an ExcelFile object. This prevents multiple downloads.
+            Downloads the entire Google Sheet as bytes once and caches the result.
+            This is serializable and avoids the UnserializableReturnValueError.
             """
             try:
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
                 headers = {'User-Agent': 'Mozilla/5.0'}
                 response = requests.get(sheet_url, headers=headers)
                 response.raise_for_status() # Will raise an HTTPError for bad responses (4xx or 5xx)
-                excel_data = BytesIO(response.content)
-                excel_file = pd.ExcelFile(excel_data, engine='openpyxl')
-                return excel_file
+                return response.content
             except requests.exceptions.RequestException as e:
                 st.error(f"Could not load project categories from Google Sheets. Error: {e}")
                 st.info("Please ensure the Google Sheet's 'General access' is set to 'Anyone with the link' and that you have a stable internet connection.")
                 return None
+        
+        excel_file_bytes = download_sheet_as_bytes()
+        excel_file = None # Initialize excel_file to None
+        if excel_file_bytes:
+            try:
+                # Now, create the ExcelFile object from the cached bytes
+                excel_file = pd.ExcelFile(BytesIO(excel_file_bytes), engine='openpyxl')
             except Exception as e:
                 st.error(f"An error occurred while processing the Excel file: {e}")
-                return None
-
-        excel_file = load_google_sheet_data()
+        # --- END FIX ---
         
         if excel_file:
             categories = excel_file.sheet_names
@@ -116,14 +120,11 @@ if lifecycle_step == "1. Define Problem & Load Data":
                     projects_df = pd.read_excel(excel_file, sheet_name=selected_category)
                     projects_df.columns = projects_df.columns.str.strip()
                     
-                    # --- FIX: Validate required columns exist ---
                     required_columns = ['Problem Statement', 'Dataset URL']
                     missing_cols = [col for col in required_columns if col not in projects_df.columns]
                     if missing_cols:
                         st.error(f"The '{selected_category}' sheet is missing required columns: **{', '.join(missing_cols)}**. Please check your Google Sheet.")
-                        projects_df = None # Prevent further execution
-                    # --- END FIX ---
-
+                        projects_df = None
                 except Exception as e:
                     st.error(f"Failed to read the '{selected_category}' sheet. Error: {e}")
                     projects_df = None
@@ -358,3 +359,4 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
+
