@@ -24,7 +24,7 @@ except Exception:
     st.stop()
 
 # --- Helper Functions ---
-def call_groq(prompt, model="llama3-70b-8192"):
+def call_groq(prompt, model="llama-3.3-70b-versatile"):
     """Function to call the GROQ API and get a response."""
     try:
         chat_completion = client.chat.completions.create(
@@ -314,7 +314,7 @@ elif lifecycle_step == "3. Guided Data Analysis":
                                 ```
                                 Explain what this code does and why it's useful for the task.
                                 """
-                                st.session_state.explanation = call_groq(prompt, model="llama3-8b-8192")
+                                st.session_state.explanation = call_groq(prompt, model="llama-3.3-70b-versatile")
 
             # --- Output and Explanation ---
             with col2:
@@ -346,4 +346,3 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
-
