@@ -72,39 +72,91 @@ st.title(f"Module: {lifecycle_step}")
 # --- Module 1: Define Problem & Load Data ---
 if lifecycle_step == "1. Define Problem & Load Data":
     st.header("Step 1: Define Your Goal")
-    st.text_area("Start with a basic problem statement or goal:", key="problem_statement")
-    
-    if st.button("Enhance with AI"):
-        if st.session_state.problem_statement:
-            with st.spinner("AI is refining your problem statement..."):
-                prompt = f"""
-                A user has provided the following basic problem statement for a data science project:
-                '{st.session_state.problem_statement}'
-                Enhance this into a clear, concise, and well-defined problem statement. 
-                Focus on the potential objectives and success metrics.
-                """
-                st.session_state.enhanced_problem_statement = call_groq(prompt)
-        else:
-            st.warning("Please provide a basic problem statement first.")
 
-    if st.session_state.enhanced_problem_statement:
-        st.text_area("Edit and confirm the final problem statement:", key="enhanced_problem_statement", height=150)
+    problem_source = st.radio(
+        "How would you like to start?",
+        ("Define my own problem statement", "Select a pre-defined project"),
+        key="problem_source",
+        horizontal=True
+    )
 
-    st.header("Step 2: Provide Your Data")
-    data_source = st.radio("Choose data source:", ("Upload a CSV file", "Provide a URL"))
-
-    if data_source == "Upload a CSV file":
-        uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
-        if uploaded_file:
-            st.session_state.df = pd.read_csv(uploaded_file)
-    else:
-        url = st.text_input("Enter the URL of a raw CSV file:")
-        if url:
+    # Option 2: Select from a pre-defined list
+    if problem_source == "Select a pre-defined project":
+        
+        @st.cache_data
+        def load_project_list():
             try:
-                st.session_state.df = pd.read_csv(url)
+                # Convert the Google Sheet share URL to a CSV export URL
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=csv"
+                projects_df = pd.read_csv(sheet_url)
+                return projects_df
             except Exception as e:
-                st.error(f"Failed to load data from URL: {e}")
+                st.error(f"Could not load project list from Google Sheets. Please ensure the link is public. Error: {e}")
+                return None
 
+        projects_df = load_project_list()
+
+        if projects_df is not None:
+            categories = projects_df['Category'].unique()
+            selected_category = st.selectbox("Select a Project Category:", options=categories)
+
+            if selected_category:
+                filtered_projects = projects_df[projects_df['Category'] == selected_category]
+                problem_statements = ["-"] + filtered_projects['Problem Statement'].tolist()
+                
+                selected_problem = st.selectbox("Select a Problem Statement:", options=problem_statements)
+
+                if selected_problem and selected_problem != "-":
+                    project_details = filtered_projects[filtered_projects['Problem Statement'] == selected_problem].iloc[0]
+                    st.session_state.problem_statement = project_details['Problem Statement']
+                    dataset_url = project_details['Dataset URL']
+                    
+                    st.info(f"**Selected Problem:** {st.session_state.problem_statement}")
+                    st.markdown(f"**Dataset Source:** [Link]({dataset_url})")
+
+                    try:
+                        with st.spinner("Loading dataset for the selected project..."):
+                            st.session_state.df = pd.read_csv(dataset_url)
+                    except Exception as e:
+                        st.error(f"Failed to load data from URL: {e}")
+                        st.session_state.df = None
+
+    # Option 1: Define your own problem statement
+    else:
+        st.text_area("Start with a basic problem statement or goal:", key="problem_statement")
+        
+        if st.button("Enhance with AI"):
+            if st.session_state.problem_statement:
+                with st.spinner("AI is refining your problem statement..."):
+                    prompt = f"""
+                    A user has provided the following basic problem statement for a data science project:
+                    '{st.session_state.problem_statement}'
+                    Enhance this into a clear, concise, and well-defined problem statement. 
+                    Focus on the potential objectives and success metrics.
+                    """
+                    st.session_state.enhanced_problem_statement = call_groq(prompt)
+            else:
+                st.warning("Please provide a basic problem statement first.")
+
+        if st.session_state.enhanced_problem_statement:
+            st.text_area("Edit and confirm the final problem statement:", key="enhanced_problem_statement", height=150)
+
+        st.header("Step 2: Provide Your Data")
+        data_source = st.radio("Choose data source:", ("Upload a CSV file", "Provide a URL"))
+
+        if data_source == "Upload a CSV file":
+            uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
+            if uploaded_file:
+                st.session_state.df = pd.read_csv(uploaded_file)
+        else:
+            url = st.text_input("Enter the URL of a raw CSV file:")
+            if url:
+                try:
+                    st.session_state.df = pd.read_csv(url)
+                except Exception as e:
+                    st.error(f"Failed to load data from URL: {e}")
+
+    # This part is common to both options and will display the dataframe once loaded
     if st.session_state.df is not None:
         st.success("Data loaded successfully!")
         st.dataframe(st.session_state.df.head())
