@@ -125,8 +125,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
                         
                         # Only generate the plan if it's a new project selection
                         if st.session_state.plan_generated_for != st.session_state.problem_statement:
-                            # Fetch all the detailed planning columns
-                            refined_statement = project_details.get('Refined Problem Statement', 'Not specified.')
+                            # Fetch all the detailed planning columns using the correct names
                             key_questions = project_details.get('Key Questions for Exploration', 'Not specified.')
                             key_analytics = project_details.get('Key Analytics & Statistics', 'Not specified.')
                             viz_ideas = project_details.get('Data Visualization Ideas', 'Not specified.')
@@ -134,16 +133,16 @@ if lifecycle_step == "1. Define Problem & Load Data":
                             
                             # Build the prompt for the AI to generate a comprehensive plan
                             generation_prompt = f"""
-                            As a data science project manager, synthesize the following points for a project titled "{st.session_state.problem_statement}" into a comprehensive 'Detailed Project Plan & Goals'.
-                            The output should be well-structured using markdown headings for clarity.
+                            As a data science project manager, use the following points to generate a comprehensive 'Detailed Project Plan & Goals' for the project titled "{st.session_state.problem_statement}".
+                            The output should be a well-structured and actionable plan using markdown headings for clarity. Synthesize these details into a cohesive project description.
 
-                            - **Base Problem Statement:** {refined_statement}
+                            - **Project Goal (from Problem Statement):** {st.session_state.problem_statement}
                             - **Key Questions to Explore:** {key_questions}
                             - **Core Analytics & Statistics to Use:** {key_analytics}
                             - **Potential Visualization Ideas:** {viz_ideas}
                             - **Expected Potential Insights:** {potential_insights}
 
-                            Combine these points into a cohesive and actionable project plan.
+                            Now, generate the detailed project plan based on the above information.
                             """
                             with st.spinner("AI is generating a detailed project plan..."):
                                 st.session_state.enhanced_problem_statement = call_groq(generation_prompt)
@@ -326,7 +325,7 @@ elif lifecycle_step == "3. Guided Data Analysis":
                     st.info("Output will be displayed here.")
                 
                 if "image_data" in result:
-                    st.image(base64.b4decode(result["image_data"]), caption="Generated Plot")
+                    st.image(base64.b64decode(result["image_data"]), caption="Generated Plot")
                 
                 if st.session_state.explanation:
                     st.markdown("---")
@@ -348,5 +347,3 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
-
-
