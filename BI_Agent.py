@@ -4,7 +4,7 @@ import requests
 import base64
 import os
 from groq import Groq
-from io import StringIO
+from io import StringIO, BytesIO
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -84,37 +84,50 @@ if lifecycle_step == "1. Define Problem & Load Data":
     if problem_source == "Select a pre-defined project":
         
         @st.cache_data
-        def get_project_categories():
-            """Reads the sheet names from the Google Sheet, which are the categories."""
-            try:
-                #https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/edit?usp=sharing
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
-                excel_file = pd.ExcelFile(sheet_url, engine='openpyxl')
-                return excel_file.sheet_names
-            except Exception as e:
-                st.error(f"Could not load project categories from Google Sheets. Error: {e}")
-                return []
-
-        @st.cache_data
-        def load_project_sheet(category):
-            """Loads a specific sheet (category) from the Google Sheet into a DataFrame."""
+        def load_google_sheet_data():
+            """
+            Downloads the entire Google Sheet once, stores it in cache, 
+            and returns an ExcelFile object. This prevents multiple downloads.
+            """
             try:
                 sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
-                projects_df = pd.read_excel(sheet_url, sheet_name=category, engine='openpyxl')
-                projects_df.columns = projects_df.columns.str.strip()
-                return projects_df
+                headers = {'User-Agent': 'Mozilla/5.0'}
+                response = requests.get(sheet_url, headers=headers)
+                response.raise_for_status() # Will raise an HTTPError for bad responses (4xx or 5xx)
+                excel_data = BytesIO(response.content)
+                excel_file = pd.ExcelFile(excel_data, engine='openpyxl')
+                return excel_file
+            except requests.exceptions.RequestException as e:
+                st.error(f"Could not load project categories from Google Sheets. Error: {e}")
+                st.info("Please ensure the Google Sheet's 'General access' is set to 'Anyone with the link' and that you have a stable internet connection.")
+                return None
             except Exception as e:
-                st.error(f"Could not load the project list for the '{category}' category. Error: {e}")
+                st.error(f"An error occurred while processing the Excel file: {e}")
                 return None
 
-        categories = get_project_categories()
+        excel_file = load_google_sheet_data()
         
-        if categories:
+        if excel_file:
+            categories = excel_file.sheet_names
             selected_category = st.selectbox("Select a Project Category:", options=categories)
 
             if selected_category:
-                projects_df = load_project_sheet(selected_category)
-                
+                try:
+                    projects_df = pd.read_excel(excel_file, sheet_name=selected_category)
+                    projects_df.columns = projects_df.columns.str.strip()
+                    
+                    # --- FIX: Validate required columns exist ---
+                    required_columns = ['Problem Statement', 'Dataset URL']
+                    missing_cols = [col for col in required_columns if col not in projects_df.columns]
+                    if missing_cols:
+                        st.error(f"The '{selected_category}' sheet is missing required columns: **{', '.join(missing_cols)}**. Please check your Google Sheet.")
+                        projects_df = None # Prevent further execution
+                    # --- END FIX ---
+
+                except Exception as e:
+                    st.error(f"Failed to read the '{selected_category}' sheet. Error: {e}")
+                    projects_df = None
+
                 if projects_df is not None:
                     problem_statements = ["-"] + projects_df['Problem Statement'].tolist()
                     selected_problem = st.selectbox("Select a Problem Statement:", options=problem_statements)
@@ -124,15 +137,12 @@ if lifecycle_step == "1. Define Problem & Load Data":
                         
                         st.session_state.problem_statement = project_details.get('Problem Statement', '')
                         
-                        # Only generate the plan if it's a new project selection
                         if st.session_state.plan_generated_for != st.session_state.problem_statement:
-                            # Fetch all the detailed planning columns using the correct names
                             key_questions = project_details.get('Key Questions for Exploration', 'Not specified.')
                             key_analytics = project_details.get('Key Analytics & Statistics', 'Not specified.')
                             viz_ideas = project_details.get('Data Visualization Ideas', 'Not specified.')
                             potential_insights = project_details.get('Potential Data Insights', 'Not specified.')
                             
-                            # Build the prompt for the AI to generate a comprehensive plan
                             generation_prompt = f"""
                             As a data science project manager, use the following points to generate a comprehensive 'Detailed Project Plan & Goals' for the project titled "{st.session_state.problem_statement}".
                             The output should be a well-structured and actionable plan using markdown headings for clarity. Synthesize these details into a cohesive project description.
@@ -147,7 +157,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
                             """
                             with st.spinner("AI is generating a detailed project plan..."):
                                 st.session_state.enhanced_problem_statement = call_groq(generation_prompt)
-                                st.session_state.plan_generated_for = st.session_state.problem_statement # Mark as generated for this project
+                                st.session_state.plan_generated_for = st.session_state.problem_statement
 
                         key_steps_raw = project_details.get('Key Analytics Steps', '')
                         st.session_state.suggested_tasks = [step.strip() for step in (key_steps_raw.split('\n') if key_steps_raw and isinstance(key_steps_raw, str) else []) if step.strip()]
