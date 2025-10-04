@@ -87,8 +87,8 @@ if lifecycle_step == "1. Define Problem & Load Data":
         def get_project_categories():
             """Reads the sheet names from the Google Sheet, which are the categories."""
             try:
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/edit?usp=sharing/export?format=xlsx"
-                excel_file = pd.ExcelFile(sheet_url)
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
+                excel_file = pd.ExcelFile(sheet_url, engine='openpyxl')
                 return excel_file.sheet_names
             except Exception as e:
                 st.error(f"Could not load project categories from Google Sheets. Error: {e}")
@@ -99,7 +99,7 @@ if lifecycle_step == "1. Define Problem & Load Data":
             """Loads a specific sheet (category) from the Google Sheet into a DataFrame."""
             try:
                 sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNzI0XF8Y/export?format=xlsx"
-                projects_df = pd.read_excel(sheet_url, sheet_name=category)
+                projects_df = pd.read_excel(sheet_url, sheet_name=category, engine='openpyxl')
                 projects_df.columns = projects_df.columns.str.strip()
                 return projects_df
             except Exception as e:
@@ -214,7 +214,9 @@ if lifecycle_step == "1. Define Problem & Load Data":
                 if st.session_state.enhanced_problem_statement:
                     with st.spinner("AI is refining the plan..."):
                         refine_prompt = f"Refine the following data science project plan to be more detailed, structured, and actionable:\n\n---\n{st.session_state.enhanced_problem_statement}\n---"
-                        st.session_state.enhanced_problem_statement = call_groq(refine_prompt)
+                        refined_plan = call_groq(refine_prompt)
+                        if refined_plan:
+                            st.session_state.enhanced_problem_statement = refined_plan
                         st.rerun()
                 else:
                     st.warning("Project plan is empty. Cannot refine.")
@@ -324,7 +326,7 @@ elif lifecycle_step == "3. Guided Data Analysis":
                     st.info("Output will be displayed here.")
                 
                 if "image_data" in result:
-                    st.image(base64.b64decode(result["image_data"]), caption="Generated Plot")
+                    st.image(base64.b4decode(result["image_data"]), caption="Generated Plot")
                 
                 if st.session_state.explanation:
                     st.markdown("---")
@@ -346,3 +348,4 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
+                        
