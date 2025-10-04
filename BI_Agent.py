@@ -83,45 +83,60 @@ if lifecycle_step == "1. Define Problem & Load Data":
     # Option 2: Select from a pre-defined list
     if problem_source == "Select a pre-defined project":
         
+        # FIX: New functions to handle multi-sheet Google Sheet
         @st.cache_data
-        def load_project_list():
+        def get_project_categories():
+            """Reads the sheet names from the Google Sheet, which are the categories."""
             try:
-                # Convert the Google Sheet share URL to a CSV export URL
-                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=csv"
-                projects_df = pd.read_csv(sheet_url)
-                # FIX: Strip any leading/trailing whitespace from column names to prevent KeyErrors
+                # URL for exporting the entire spreadsheet as an Excel file
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                # Use pd.ExcelFile to efficiently get sheet names without loading all data
+                excel_file = pd.ExcelFile(sheet_url)
+                return excel_file.sheet_names
+            except Exception as e:
+                st.error(f"Could not load project categories from Google Sheets. Error: {e}")
+                return []
+
+        @st.cache_data
+        def load_project_sheet(category):
+            """Loads a specific sheet (category) from the Google Sheet into a DataFrame."""
+            try:
+                sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=xlsx"
+                projects_df = pd.read_excel(sheet_url, sheet_name=category)
+                # Strip any leading/trailing whitespace from column names
                 projects_df.columns = projects_df.columns.str.strip()
                 return projects_df
             except Exception as e:
-                st.error(f"Could not load project list from Google Sheets. Please ensure the link is public. Error: {e}")
+                st.error(f"Could not load the project list for the '{category}' category. Error: {e}")
                 return None
 
-        projects_df = load_project_list()
-
-        if projects_df is not None:
-            categories = projects_df['Category'].unique()
+        categories = get_project_categories()
+        
+        if categories:
             selected_category = st.selectbox("Select a Project Category:", options=categories)
 
             if selected_category:
-                filtered_projects = projects_df[projects_df['Category'] == selected_category]
-                problem_statements = ["-"] + filtered_projects['Problem Statement'].tolist()
+                projects_df = load_project_sheet(selected_category)
                 
-                selected_problem = st.selectbox("Select a Problem Statement:", options=problem_statements)
-
-                if selected_problem and selected_problem != "-":
-                    project_details = filtered_projects[filtered_projects['Problem Statement'] == selected_problem].iloc[0]
-                    st.session_state.problem_statement = project_details['Problem Statement']
-                    dataset_url = project_details['Dataset URL']
+                if projects_df is not None:
+                    problem_statements = ["-"] + projects_df['Problem Statement'].tolist()
                     
-                    st.info(f"**Selected Problem:** {st.session_state.problem_statement}")
-                    st.markdown(f"**Dataset Source:** [Link]({dataset_url})")
+                    selected_problem = st.selectbox("Select a Problem Statement:", options=problem_statements)
 
-                    try:
-                        with st.spinner("Loading dataset for the selected project..."):
-                            st.session_state.df = pd.read_csv(dataset_url)
-                    except Exception as e:
-                        st.error(f"Failed to load data from URL: {e}")
-                        st.session_state.df = None
+                    if selected_problem and selected_problem != "-":
+                        project_details = projects_df[projects_df['Problem Statement'] == selected_problem].iloc[0]
+                        st.session_state.problem_statement = project_details['Problem Statement']
+                        dataset_url = project_details['Dataset URL']
+                        
+                        st.info(f"**Selected Problem:** {st.session_state.problem_statement}")
+                        st.markdown(f"**Dataset Source:** [Link]({dataset_url})")
+
+                        try:
+                            with st.spinner("Loading dataset for the selected project..."):
+                                st.session_state.df = pd.read_csv(dataset_url)
+                        except Exception as e:
+                            st.error(f"Failed to load data from URL: {e}")
+                            st.session_state.df = None
 
     # Option 1: Define your own problem statement
     else:
