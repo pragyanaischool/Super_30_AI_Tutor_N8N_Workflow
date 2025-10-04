@@ -89,6 +89,8 @@ if lifecycle_step == "1. Define Problem & Load Data":
                 # Convert the Google Sheet share URL to a CSV export URL
                 sheet_url = "https://docs.google.com/spreadsheets/d/1V7Vsi3nIvyyjAsHB428axgDrIFFq-VSczoNz9I0XF8Y/export?format=csv"
                 projects_df = pd.read_csv(sheet_url)
+                # FIX: Strip any leading/trailing whitespace from column names to prevent KeyErrors
+                projects_df.columns = projects_df.columns.str.strip()
                 return projects_df
             except Exception as e:
                 st.error(f"Could not load project list from Google Sheets. Please ensure the link is public. Error: {e}")
@@ -284,4 +286,3 @@ elif lifecycle_step == "3. Guided Data Analysis":
                             fix = call_groq(prompt)
                             if fix:
                                 st.markdown(fix)
-
